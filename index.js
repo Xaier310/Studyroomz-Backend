@@ -20,8 +20,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname + "/public"));
 
-console.log("server is running");
-console.log("server is running");
 
 mongoose.connect(
   `${process.env.MONGO_DB_LINK}`,
