@@ -236,6 +236,3 @@ app.post("/api/studyroomz",(req,res)=>{
 
 // module.exports = db;
 
-
-console.log("hiiii");
-console.log("hiiii");

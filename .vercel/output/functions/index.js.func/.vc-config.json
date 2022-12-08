@@ -1,9 +1,0 @@
-{
-  "handler": "index.js",
-  "runtime": "nodejs18.x",
-  "environment": {},
-  "launcherType": "Nodejs",
-  "shouldAddHelpers": true,
-  "shouldAddSourcemapSupport": false,
-  "awsLambdaHandler": ""
-}
