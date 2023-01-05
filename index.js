@@ -15,6 +15,7 @@ const { instrument } = require("@socket.io/admin-ui");
 const mysql = require('mysql');
 const { msgSchema } = require("./models/Msg");
 const Msg = require("./models/Msg");
+const fs = require("fs");
 
 app.use(cors());
 app.use(express.json());
@@ -78,9 +79,12 @@ app.get("/",(req,res)=>{
 })
 
 var users = [];
+const roomsPerTopic = 10;
+
 const addUser = (user, socketid) => {
-  !users.some((usr) => usr.socketid === socketid) &&
+  if(!users.some((usr) => usr.socketid === socketid)){
     users.push({ user, socketid });
+  }
 };
 
 const removeUser = (socketid) => {
@@ -88,6 +92,7 @@ const removeUser = (socketid) => {
 };
 
 io.on("connection", (socket) => {
+
   var rooms = io.sockets.adapter.rooms;
   io.in(socket.id).socketsLeave(socket.id);
   io.emit("welcome", "Hello this is a chat app");
@@ -136,7 +141,7 @@ io.on("connection", (socket) => {
 
   socket.on("custom_stats", (roomStr) => {
     var length = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < roomsPerTopic; i++) {
       if (rooms.get(`${roomStr}${i + 1}`))
         length.push(rooms.get(`${roomStr}${i + 1}`).size);
       else length.push(0);
@@ -171,28 +176,23 @@ io.on("connection", (socket) => {
     console.log("Users connected : ", users.length);
   });
 
+
   socket.on("disconnect", () => {
     removeUser(socket.id);
     if (socket.roomId) {
       socket.to(socket.roomId).emit("getUsers", users);
     }
   });
+
+  
+  socket.on("upload",({data})=>{
+    console.log("upload...",data);
+    // fs.writeFile("upload/" + "test.png", data, {encoding: "base64"},()=>{
+    // })
+    // socket.emit("uploaded",{buffer: data.toString("base64")});
+    // console.log(data);
+  })
 });
-
-// const db = mysql.createConnection({
-//   user: 'root',
-//   password: 'password',
-//   host: 'localhost',
-//   database: 'studyroomz'
-// });
-
-// db.connect((err) => {
-//   if(err){
-//     console.log('Error connecting to Db',err);
-//     return;
-//   }
-//   console.log('Database connection established');
-// });
 
 app.get("/api/allmsg",async (req,res)=>{
   Msg.find({},(err,docs)=>{
@@ -203,36 +203,17 @@ app.get("/api/allmsg",async (req,res)=>{
 
 app.get("/api/studyroomz",async (req,res)=>{
   var roomid = req.query.roomid;
-  var curTime = new Date();
   if(roomid){
     Msg.find({roomId:roomid},(err,docs)=>{
       if(err) console.log(err);
       else res.send(docs);
     });
   }
-  // db.query(
-  //    `SELECT * FROM ROOM 
-  //     WHERE roomid = '${roomid}'
-  //     ORDER BY _time
-  //    `,(err,result)=>{
-  //      if(err) console.log(err);
-  //      else res.send(result);
-  //    });
 });
 
 app.post("/api/studyroomz",(req,res)=>{
   var msgs = new Msg(req.body);
   msgs.save();
-  // db.query(
-  //   "INSERT INTO room (msg, roomId, time, username, _time, nickname) VALUES (?,?,?,?,?,?)",[req.body.msg,req.body.roomId,req.body.time,req.body.username,req.body._time,req.body.nickname],
-  //   (err, result)=>{
-  //        if(err) console.log(err);
-  //        else console.log("Msg Successfully inserted backend");
-  //   }
-  // );
 });
 
-// app.use("/api/studyroomz", mysqlRoute);
-
-// module.exports = db;
 
