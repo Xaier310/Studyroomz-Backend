@@ -7,7 +7,7 @@ router.get("/",async (req,res)=>{
         var data = req.body;
         var room = await Room.find({roomId:data.roomId});
         if(room.length !== 0){
-            console.log("dshb :",room[0].msgs);
+            // console.log("dshb :",room[0].msgs);
             res.status(200).json(room[0].msgs);
         }else{
             res.status(404).json("room not found");

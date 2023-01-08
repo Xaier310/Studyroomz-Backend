@@ -12,6 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "@socket.io/admin-ui": "^0.2.0",
+    "axios": "^1.2.2",
     "circular-json": "^0.5.9",
     "cors": "^2.8.5",
     "dotenv": "^10.0.0",
@@ -19,6 +20,6 @@
     "mongoose": "^6.1.1",
     "mysql": "^2.18.1",
     "mysql2": "^2.3.3",
-    "socket.io": "^4.4.0"
+    "socket.io": "^4.5.4"
   }
 }

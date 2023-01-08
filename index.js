@@ -1,30 +1,35 @@
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
-const path = require("path");
 const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 require("dotenv").config();
-const app = express();
-const server = http.createServer(app);
-const mysqlRoute = require("./routes/mysql");
 const roomRoute = require("./routes/rooms");
 const makeChangesRoute = require("./routes/makechanges");
 const fetchAllMsgsRoute = require("./routes/fetchmsgs");
-const { instrument } = require("@socket.io/admin-ui");
-const mysql = require('mysql');
-const { msgSchema } = require("./models/Msg");
 const Msg = require("./models/Msg");
-const fs = require("fs");
+const { addUser, removeUser, getUser, getUsersInRoom, isRoomValid } = require("./users");
+const axios = require("axios");
+
+
+const PORT = process.env.PORT || 3001;
+const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname + "/public"));
 
 
+const backendServer = app.listen(PORT, () => {
+  try {
+    console.log(`Backend server is running on port ${PORT}`);
+  } catch (err) {
+    console.log(err);
+  }
+});
+
 mongoose.connect(
   `${process.env.MONGO_DB_LINK}`,
-  // `mongodb://localhost:27017/ChatBot`,
   (err) => {
     if (err) throw err;
     console.log("MONGODB Connected Successfully");
@@ -35,164 +40,102 @@ app.use("/api/fetchallmsgs", fetchAllMsgsRoute);
 app.use("/api/rooms", roomRoute);
 app.use("/api/makechanges", makeChangesRoute);
 
-function randomStr() {
-  var ans = "";
-  const arr = "1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  for (var i = 6; i > 0; i--) {
-    ans += arr[Math.floor(Math.random() * arr.length)];
-  }
-  var f = Date.now();
-  return ans+f;
-}
 
-const io = new Server(server, {
-  cors: {
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:3001",
-      "https://admin.socket.io/",
-      `${process.env.FRONTEND_API}`,
-    ],
-    methods: ["GET", "POST"],
-  },
-});
-
-// const io = new Server(5000);
-
-const PORT = process.env.PORT || 3001;
+const io = new Server(backendServer, {cors: { origin: "*"}});
 
 
-instrument(io,{
-  auth: false,
-});
-
-
-server.listen(PORT, () => {
-  try {
-    console.log(`Backend server is running on port ${PORT}`);
-  } catch (err) {
-    console.log(err);
-  }
-});
 app.get("/",(req,res)=>{
   res.send("Backend is up and running");
 })
 
-var users = [];
-const roomsPerTopic = 10;
 
-const addUser = (user, socketid) => {
-  if(!users.some((usr) => usr.socketid === socketid)){
-    users.push({ user, socketid });
-  }
-};
 
-const removeUser = (socketid) => {
-  users = users.filter((user) => user.socketid !== socketid);
-};
+
+
+/*************************** socket emits and catch ************** */
 
 io.on("connection", (socket) => {
+    // var rooms = io.sockets.adapter.rooms;
+    io.emit("welcome", "Hello this is a chat app");
 
-  var rooms = io.sockets.adapter.rooms;
-  io.in(socket.id).socketsLeave(socket.id);
-  io.emit("welcome", "Hello this is a chat app");
-
-  socket.on("addUser", (username) => {
-    addUser(username, socket.id);
-  });
-
-  socket.on("join_room", async (obj) => {
-    if (obj.type === "oldRoom") {
-      if (rooms.has(obj.roomId)) {
-        if (!rooms.get(obj.roomId).has(socket.io)) {
-          await socket.join(obj.roomId);
-          socket.roomId = obj.roomId;
-          socket.emit("isJoined", true);
-        }
-      } 
-    else {
-        console.log("Room id is not valid");
-        socket.emit("isJoined", false);
+    socket.on("join_room", function ({ userInfo, roomId, isOldRoom }, callback) {
+      if (typeof callback !== "function") return;    
+      if(isOldRoom && !isRoomValid({roomId})) callback({error:"Invalid Room Id"});
+      const { error, user } = addUser({ socketid:socket.id, roomId, userInfo });
+      if(error) return callback({error});
+      socket.join(roomId);
+      const arr = getUsersInRoom({roomId})
+      console.log("litsen join room...", userInfo.nickname);
+      io.to(roomId).emit("give_room_users", {users:arr});
+      callback({error:undefined});
+    });
+  
+    socket.on("send_message", (msg) => {
+      console.log("msg recieved...",msg.roomId);
+      io.to(msg.roomId).emit("receive_message", msg);
+    });
+  
+    socket.on("custom_stats_no", ({roomStr, roomsPerTopic}) => {
+      var length = [];
+      for (let i = 0; i < roomsPerTopic; i++) {
+        const roomId = `${roomStr}${i + 1}`;
+        const usersInRoom = getUsersInRoom({roomId});
+        length.push(usersInRoom.length);
       }
-    } else if (obj.type === "newRoom") {
-        await socket.join(obj.roomId);
-        socket.roomId = obj.roomId;
-    }
-  });
-
-  socket.on("join_custom_room", async (roomId) => {
-    if (rooms.has(roomId)) {
-      if (!rooms.get(roomId).has(socket.id)) {
-        await socket.join(roomId);
-        socket.roomId = roomId;
-        // socket.emit("isJoined", true);
+      socket.emit("custom_stats_no", length);
+    });
+  
+    socket.on("give_room_users", ({roomId}) => {
+      const arr = getUsersInRoom({roomId})
+      socket.emit("give_room_users", {users:arr});
+    });
+  
+    socket.on("remove_me", (roomId) => {
+      removeUser({socketid:socket.id});
+      const arr = getUsersInRoom({roomId});
+      if(arr.length === 0 && !roomId.includes("webroom") && !roomId.includes("androidroom") && !roomId.includes("mlroom")){ 
+        axios.delete(`${process.env.BACKEND_API}api/studyroomz`,{ params: { roomid:roomId } }).
+        then((res)=>{
+          console.log("Rooms msgs deleted from room",roomId);
+        }).catch((err)=>{
+          console.log("err : ",err);
+        })
       }
-    } else {
-      await socket.join(roomId);
-      socket.roomId = roomId;
-      // socket.emit("isJoined", true);
-    }
-  });
-
-  socket.on("send_message", (msg) => {
-    console.log("msg recieved...",msg.roomId);
-    socket.to(msg.roomId).emit("receive_message", msg);
-  });
-
-  socket.on("custom_stats", (roomStr) => {
-    var length = [];
-    for (let i = 0; i < roomsPerTopic; i++) {
-      if (rooms.get(`${roomStr}${i + 1}`))
-        length.push(rooms.get(`${roomStr}${i + 1}`).size);
-      else length.push(0);
-    }
-    socket.emit("your_custom_stats", length);
-  });
-
-  socket.on("give_roomUsers", (roomId) => {
-    var arr = [];
-    if (rooms.has(roomId)) {
-      arr = Array.from(rooms.get(roomId));
-    }
-    io.in(roomId).emit("get_roomUsers", arr);
-  });
-
-  socket.on("remove_me", (roomId) => {
-    if (roomId) {
-      if (rooms.has(roomId)) {
-        if (rooms.get(roomId).has(socket.id)) {
-          io.in(roomId).socketsLeave(socket.id);
-        }
-      }
-      removeUser(socket.id);
-      if (socket.roomId) {
-        socket.to(socket.roomId).emit("getUsers", users);
-      }
-    }
-  });
-
-  socket.on("giveUsers", (roomId) => {
-    socket.to(roomId).emit("getUsers", users);
-    console.log("Users connected : ", users.length);
-  });
-
+      else socket.to(roomId).emit("give_room_users", {users:arr});
+    });
 
   socket.on("disconnect", () => {
-    removeUser(socket.id);
-    if (socket.roomId) {
-      socket.to(socket.roomId).emit("getUsers", users);
+    const user = getUser({socketid:socket.id})
+    if(!user || !user.roomId) return;
+    const roomId = user.roomId;
+    removeUser({socketid:socket.id});
+    const arr = getUsersInRoom({roomId:roomId});
+    if(arr.length === 0 && !roomId.includes("webroom") && !roomId.includes("androidroom") && !roomId.includes("mlroom")){ 
+      axios.delete(`${process.env.BACKEND_API}api/studyroomz`,{ params: { roomid:roomId } }).
+      then((res)=>{
+        console.log("Rooms msgs deleted from room",roomId);
+      }).catch((err)=>{
+        console.log("err : ",err);
+      })
     }
+    else socket.to(roomId).emit("give_room_user", {users:arr});
   });
-
   
-  socket.on("upload",({data})=>{
-    console.log("upload...",data);
-    // fs.writeFile("upload/" + "test.png", data, {encoding: "base64"},()=>{
-    // })
-    // socket.emit("uploaded",{buffer: data.toString("base64")});
-    // console.log(data);
-  })
+  /*******************TEST STUFF **********************/
+  // socket.on("emit test",(roomId)=>{
+  //   console.log("emit test", roomId, isRoomValid({roomId}));
+  //   io.to(roomId).emit("test");
+  // });
+
 });
+
+
+//socket.to or socket.broadcast.to => itself will not trigger
+//io.to => all will trigger 
+
+
+
+/******************Routes ******************/
 
 app.get("/api/allmsg",async (req,res)=>{
   Msg.find({},(err,docs)=>{
@@ -202,7 +145,7 @@ app.get("/api/allmsg",async (req,res)=>{
 });
 
 app.get("/api/studyroomz",async (req,res)=>{
-  var roomid = req.query.roomid;
+  var roomid = req?.query?.roomid;
   if(roomid){
     Msg.find({roomId:roomid},(err,docs)=>{
       if(err) console.log(err);
@@ -214,6 +157,19 @@ app.get("/api/studyroomz",async (req,res)=>{
 app.post("/api/studyroomz",(req,res)=>{
   var msgs = new Msg(req.body);
   msgs.save();
+});
+
+app.delete("/api/studyroomz",(req,res)=>{
+  var roomid = req?.query?.roomid;
+  if(roomid){
+    Msg.deleteMany({roomId:roomid},(err, resp)=>{
+      if(err) console.log("err");
+      else{
+        console.log(res);
+        res.status(200).send("successfully deleted");
+      }
+    });
+  }
 });
 
 

@@ -15,10 +15,10 @@ const msgSchema = new mongoose.Schema({
     _time:{
         type:String
     },
-    nickname:{
+    name:{
         type:String
     }
-    // msg, roomId, time, username, _time, nickname
+    // msg, roomId, time, username, _time, name
 });
 
 module.exports = new mongoose.model("Msg", msgSchema);
