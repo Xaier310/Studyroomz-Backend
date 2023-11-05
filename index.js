@@ -91,6 +91,7 @@ io.on("connection", (socket) => {
     });
   
     socket.on("remove_me", (roomId) => {
+      console.log("removed...");
       removeUser({socketid:socket.id});
       const arr = getUsersInRoom({roomId});
       if(arr.length === 0 && !roomId.includes("webroom") && !roomId.includes("androidroom") && !roomId.includes("mlroom")){ 
@@ -111,12 +112,12 @@ io.on("connection", (socket) => {
     removeUser({socketid:socket.id});
     const arr = getUsersInRoom({roomId:roomId});
     if(arr.length === 0 && !roomId.includes("webroom") && !roomId.includes("androidroom") && !roomId.includes("mlroom")){ 
-      axios.delete(`${process.env.BACKEND_API}api/studyroomz`,{ params: { roomid:roomId } }).
-      then((res)=>{
-        console.log("Rooms msgs deleted from room",roomId);
-      }).catch((err)=>{
-        console.log("err : ",err);
-      })
+      // axios.delete(`${process.env.BACKEND_API}api/studyroomz`,{ params: { roomid:roomId } }).
+      // then((res)=>{
+      //   console.log("Rooms msgs deleted from room",roomId);
+      // }).catch((err)=>{
+      //   console.log("err : ",err);
+      // })
     }
     else socket.to(roomId).emit("give_room_user", {users:arr});
   });
